@@ -92,8 +92,11 @@ Index of this file:
 #endif
 #define IM_ARRAYSIZE(_ARR)          ((int)(sizeof(_ARR) / sizeof(*(_ARR))))     // Size of a static C-style array. Don't use on pointers!
 #define IM_UNUSED(_VAR)             ((void)(_VAR))                              // Used to silence "unused variable warnings". Often useful as asserts may be stripped out from final builds.
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
 #define IMGUI_CHECKVERSION()        ImGui::DebugCheckVersionAndDataLayout(IMGUI_VERSION, sizeof(ImGuiIO), sizeof(ImGuiStyle), sizeof(ImVec2), sizeof(ImVec4), sizeof(ImDrawVert), sizeof(ImDrawIdx))
-
+#else
+#define IMGUI_CHECKVERSION()        ImGui::DebugCheckVersionAndDataLayout(IMGUI_VERSION, sizeof(ImGuiIO), sizeof(ImGuiStyle), sizeof(ImVec2), sizeof(ImVec4), sizeof(ImDrawIdx))
+#endif
 // Helper Macros - IM_FMTARGS, IM_FMTLIST: Apply printf-style warnings to our formatting functions.
 // (MSVC provides an equivalent mechanism via SAL Annotations but it would require the macros in a different
 //  location. e.g. #include <sal.h> + void myprintf(_Printf_format_string_ const char* format, ...))
@@ -149,7 +152,9 @@ struct ImDrawData;                  // All draw command lists required to render
 struct ImDrawList;                  // A single draw command list (generally one per window, conceptually you may see this as a dynamic "mesh" builder)
 struct ImDrawListSharedData;        // Data shared among multiple draw lists (typically owned by parent ImGui context, but you may create one yourself)
 struct ImDrawListSplitter;          // Helper to split a draw list into different layers which can be drawn into out of order, then flattened back.
-struct ImDrawVert;                  // A single vertex (pos + uv + col = 20 bytes by default. Override layout with IMGUI_OVERRIDE_DRAWVERT_STRUCT_LAYOUT)
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
+struct ImDrawVert;                  // A single vertex (pos + uv + col = 20 bytes by default. Override layout with IMGUI_OVERRIDE_DRAWVERT_STRUCT_LAYOUT). To enable this, define IMGUI_USE_VERTEX_INPUT_LAYOUTS as a compilation definition or in imconfig.h
+#endif
 struct ImFont;                      // Runtime data for a single font within a parent ImFontAtlas
 struct ImFontAtlas;                 // Runtime data for multiple fonts, bake multiple fonts into a single texture, TTF/OTF font loader
 struct ImFontBuilderIO;             // Opaque interface to a font builder (stb_truetype or FreeType).
@@ -298,6 +303,12 @@ IM_MSVC_RUNTIME_CHECKS_RESTORE
 // [SECTION] Dear ImGui end-user API functions
 // (Note that ImGui:: being a namespace, you can add extra ImGui:: functions in your own separate file. Please don't modify imgui source files!)
 //-----------------------------------------------------------------------------
+
+#ifndef IMGUI_USE_VERTEX_INPUT_LAYOUTS
+typedef ImVec2 ImDrawVertPos;
+typedef ImVec2 ImDrawVertUv;
+typedef ImU32 ImDrawVertCol;
+#endif
 
 namespace ImGui
 {
@@ -1004,6 +1015,7 @@ namespace ImGui
     IMGUI_API void          DebugFlashStyleColor(ImGuiCol idx);
     IMGUI_API void          DebugStartItemPicker();
     IMGUI_API bool          DebugCheckVersionAndDataLayout(const char* version_str, size_t sz_io, size_t sz_style, size_t sz_vec2, size_t sz_vec4, size_t sz_drawvert, size_t sz_drawidx); // This is called by IMGUI_CHECKVERSION() macro.
+    IMGUI_API bool          DebugCheckVersionAndDataLayout(const char* version_str, size_t sz_io, size_t sz_style, size_t sz_vec2, size_t sz_vec4, size_t sz_drawidx); // This is called by IMGUI_CHECKVERSION() macro.
 
     // Memory Allocators
     // - Those functions are not reliant on the current context.
@@ -2826,14 +2838,26 @@ struct ImDrawList
     // This is what you have to render
     ImVector<ImDrawCmd>     CmdBuffer;          // Draw commands. Typically 1 command = 1 GPU draw call, unless the command is a callback.
     ImVector<ImDrawIdx>     IdxBuffer;          // Index buffer. Each command consume ImDrawCmd::ElemCount of those
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     ImVector<ImDrawVert>    VtxBuffer;          // Vertex buffer.
+#else
+    ImVector<ImDrawVertPos> VtxPosBuffer;
+    ImVector<ImDrawVertUv>  VtxUvBuffer;
+    ImVector<ImDrawVertCol> VtxColBuffer;   
+#endif
     ImDrawListFlags         Flags;              // Flags, you may poke into these to adjust anti-aliasing settings per-primitive.
 
     // [Internal, used while building lists]
     unsigned int            _VtxCurrentIdx;     // [Internal] generally == VtxBuffer.Size unless we are past 64K vertices, in which case this gets reset to 0.
     ImDrawListSharedData*   _Data;              // Pointer to shared draw data (you can use ImGui::GetDrawListSharedData() to get the one from current ImGui context)
     const char*             _OwnerName;         // Pointer to owner window's name for debugging
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     ImDrawVert*             _VtxWritePtr;       // [Internal] point within VtxBuffer.Data after each add command (to avoid using the ImVector<> operators too much)
+#else
+    ImDrawVertPos*          _VtxPosWritePtr;
+    ImDrawVertUv*           _VtxUvWritePtr;
+    ImDrawVertCol*          _VtxColWritePtr;
+#endif 
     ImDrawIdx*              _IdxWritePtr;       // [Internal] point within IdxBuffer.Data after each add command (to avoid using the ImVector<> operators too much)
     ImVector<ImVec4>        _ClipRectStack;     // [Internal]
     ImVector<ImTextureID>   _TextureIdStack;    // [Internal]
@@ -2934,7 +2958,25 @@ struct ImDrawList
     IMGUI_API void  PrimRect(const ImVec2& a, const ImVec2& b, ImU32 col);      // Axis aligned rectangle (composed of two triangles)
     IMGUI_API void  PrimRectUV(const ImVec2& a, const ImVec2& b, const ImVec2& uv_a, const ImVec2& uv_b, ImU32 col);
     IMGUI_API void  PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, const ImVec2& d, const ImVec2& uv_a, const ImVec2& uv_b, const ImVec2& uv_c, const ImVec2& uv_d, ImU32 col);
-    inline    void  PrimWriteVtx(const ImVec2& pos, const ImVec2& uv, ImU32 col)    { _VtxWritePtr->pos = pos; _VtxWritePtr->uv = uv; _VtxWritePtr->col = col; _VtxWritePtr++; _VtxCurrentIdx++; }
+
+    inline    void  PrimWriteVtx(const ImVec2& pos, const ImVec2& uv, ImU32 col)    
+    { 
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
+        _VtxWritePtr->pos = pos; 
+        _VtxWritePtr->uv = uv; 
+        _VtxWritePtr->col = col; 
+        _VtxWritePtr++;
+#else
+        *_VtxPosWritePtr = pos;
+        ++_VtxPosWritePtr;
+        *_VtxUvWritePtr = uv;
+        ++_VtxUvWritePtr;
+        *_VtxColWritePtr = col;
+        ++_VtxColWritePtr;
+#endif
+        _VtxCurrentIdx++; 
+    }
+
     inline    void  PrimWriteIdx(ImDrawIdx idx)                                     { *_IdxWritePtr = idx; _IdxWritePtr++; }
     inline    void  PrimVtx(const ImVec2& pos, const ImVec2& uv, ImU32 col)         { PrimWriteIdx((ImDrawIdx)_VtxCurrentIdx); PrimWriteVtx(pos, uv, col); } // Write vertex with unique index
 

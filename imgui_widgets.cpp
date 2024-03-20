@@ -5702,10 +5702,18 @@ bool ImGui::ColorPicker4(const char* label, float col[4], ImGuiColorEditFlags fl
         {
             const float a0 = (n)     /6.0f * 2.0f * IM_PI - aeps;
             const float a1 = (n+1.0f)/6.0f * 2.0f * IM_PI + aeps;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             const int vert_start_idx = draw_list->VtxBuffer.Size;
+#else
+            const int vert_start_idx = draw_list->VtxPosBuffer.Size;
+#endif
             draw_list->PathArcTo(wheel_center, (wheel_r_inner + wheel_r_outer)*0.5f, a0, a1, segment_per_arc);
             draw_list->PathStroke(col_white, 0, wheel_thickness);
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             const int vert_end_idx = draw_list->VtxBuffer.Size;
+#else
+            const int vert_end_idx = draw_list->VtxPosBuffer.Size;
+#endif
 
             // Paint colors over existing vertices
             ImVec2 gradient_p0(wheel_center.x + ImCos(a0) * wheel_r_inner, wheel_center.y + ImSin(a0) * wheel_r_inner);

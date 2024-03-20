@@ -3935,7 +3935,11 @@ void ImGui::GcCompactTransientWindowBuffers(ImGuiWindow* window)
 {
     window->MemoryCompacted = true;
     window->MemoryDrawListIdxCapacity = window->DrawList->IdxBuffer.Capacity;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     window->MemoryDrawListVtxCapacity = window->DrawList->VtxBuffer.Capacity;
+#else
+    window->MemoryDrawListVtxCapacity = window->DrawList->VtxPosBuffer.Capacity;
+#endif
     window->IDStack.clear();
     window->DrawList->_ClearFreeMemory();
     window->DC.ChildWindows.clear();
@@ -3949,7 +3953,13 @@ void ImGui::GcAwakeTransientWindowBuffers(ImGuiWindow* window)
     // The other buffers tends to amortize much faster.
     window->MemoryCompacted = false;
     window->DrawList->IdxBuffer.reserve(window->MemoryDrawListIdxCapacity);
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     window->DrawList->VtxBuffer.reserve(window->MemoryDrawListVtxCapacity);
+#else
+    window->DrawList->VtxPosBuffer.reserve(window->MemoryDrawListVtxCapacity);
+    window->DrawList->VtxUvBuffer.reserve(window->MemoryDrawListVtxCapacity);
+    window->DrawList->VtxColBuffer.reserve(window->MemoryDrawListVtxCapacity);
+#endif
     window->MemoryDrawListIdxCapacity = window->MemoryDrawListVtxCapacity = 0;
 }
 
@@ -7386,7 +7396,11 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
                 // - We disable this when the parent window has zero vertices, which is a common pattern leading to laying out multiple overlapping childs
                 ImGuiWindow* previous_child = parent_window->DC.ChildWindows.Size >= 2 ? parent_window->DC.ChildWindows[parent_window->DC.ChildWindows.Size - 2] : NULL;
                 bool previous_child_overlapping = previous_child ? previous_child->Rect().Overlaps(window->Rect()) : false;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
                 bool parent_is_empty = (parent_window->DrawList->VtxBuffer.Size == 0);
+#else
+                bool parent_is_empty = (parent_window->DrawList->VtxPosBuffer.Size == 0);
+#endif
                 if (window->DrawList->CmdBuffer.back().ElemCount == 0 && !parent_is_empty && !previous_child_overlapping)
                     render_decorations_in_parent = true;
             }
@@ -10172,6 +10186,18 @@ bool ImGui::DebugCheckVersionAndDataLayout(const char* version, size_t sz_io, si
     if (sz_vec2 != sizeof(ImVec2)) { error = true; IM_ASSERT(sz_vec2 == sizeof(ImVec2) && "Mismatched struct layout!"); }
     if (sz_vec4 != sizeof(ImVec4)) { error = true; IM_ASSERT(sz_vec4 == sizeof(ImVec4) && "Mismatched struct layout!"); }
     if (sz_vert != sizeof(ImDrawVert)) { error = true; IM_ASSERT(sz_vert == sizeof(ImDrawVert) && "Mismatched struct layout!"); }
+    if (sz_idx != sizeof(ImDrawIdx)) { error = true; IM_ASSERT(sz_idx == sizeof(ImDrawIdx) && "Mismatched struct layout!"); }
+    return !error;
+}
+
+bool ImGui::DebugCheckVersionAndDataLayout(const char* version, size_t sz_io, size_t sz_style, size_t sz_vec2, size_t sz_vec4, size_t sz_idx)
+{
+    bool error = false;
+    if (strcmp(version, IMGUI_VERSION) != 0) { error = true; IM_ASSERT(strcmp(version, IMGUI_VERSION) == 0 && "Mismatched version string!"); }
+    if (sz_io != sizeof(ImGuiIO)) { error = true; IM_ASSERT(sz_io == sizeof(ImGuiIO) && "Mismatched struct layout!"); }
+    if (sz_style != sizeof(ImGuiStyle)) { error = true; IM_ASSERT(sz_style == sizeof(ImGuiStyle) && "Mismatched struct layout!"); }
+    if (sz_vec2 != sizeof(ImVec2)) { error = true; IM_ASSERT(sz_vec2 == sizeof(ImVec2) && "Mismatched struct layout!"); }
+    if (sz_vec4 != sizeof(ImVec4)) { error = true; IM_ASSERT(sz_vec4 == sizeof(ImVec4) && "Mismatched struct layout!"); }
     if (sz_idx != sizeof(ImDrawIdx)) { error = true; IM_ASSERT(sz_idx == sizeof(ImDrawIdx) && "Mismatched struct layout!"); }
     return !error;
 }
@@ -20698,7 +20724,11 @@ void ImGui::DebugNodeDrawList(ImGuiWindow* window, ImGuiViewportP* viewport, con
     int cmd_count = draw_list->CmdBuffer.Size;
     if (cmd_count > 0 && draw_list->CmdBuffer.back().ElemCount == 0 && draw_list->CmdBuffer.back().UserCallback == NULL)
         cmd_count--;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     bool node_open = TreeNode(draw_list, "%s: '%s' %d vtx, %d indices, %d cmds", label, draw_list->_OwnerName ? draw_list->_OwnerName : "", draw_list->VtxBuffer.Size, draw_list->IdxBuffer.Size, cmd_count);
+#else
+    bool node_open = TreeNode(draw_list, "%s: '%s' %d vtx, %d indices, %d cmds", label, draw_list->_OwnerName ? draw_list->_OwnerName : "", draw_list->VtxPosBuffer.Size, draw_list->IdxBuffer.Size, cmd_count);
+#endif
     if (draw_list == GetWindowDrawList())
     {
         SameLine();
@@ -20739,13 +20769,24 @@ void ImGui::DebugNodeDrawList(ImGuiWindow* window, ImGuiViewportP* viewport, con
         // Calculate approximate coverage area (touched pixel count)
         // This will be in pixels squared as long there's no post-scaling happening to the renderer output.
         const ImDrawIdx* idx_buffer = (draw_list->IdxBuffer.Size > 0) ? draw_list->IdxBuffer.Data : NULL;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
         const ImDrawVert* vtx_buffer = draw_list->VtxBuffer.Data + pcmd->VtxOffset;
+#else
+        const ImDrawVertPos* vtx_positions = draw_list->VtxPosBuffer.Data + pcmd->VtxOffset;
+        const ImDrawVertUv* vtx_uvs = draw_list->VtxUvBuffer.Data + pcmd->VtxOffset;
+        const ImDrawVertCol* vtx_colors = draw_list->VtxColBuffer.Data + pcmd->VtxOffset;
+#endif
         float total_area = 0.0f;
         for (unsigned int idx_n = pcmd->IdxOffset; idx_n < pcmd->IdxOffset + pcmd->ElemCount; )
         {
             ImVec2 triangle[3];
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             for (int n = 0; n < 3; n++, idx_n++)
                 triangle[n] = vtx_buffer[idx_buffer ? idx_buffer[idx_n] : idx_n].pos;
+#else
+            for (int n = 0; n < 3; n++, idx_n++)
+                triangle[n] = vtx_positions[idx_buffer ? idx_buffer[idx_n] : idx_n];
+#endif
             total_area += ImTriangleArea(triangle[0], triangle[1], triangle[2]);
         }
 
@@ -20765,10 +20806,19 @@ void ImGui::DebugNodeDrawList(ImGuiWindow* window, ImGuiViewportP* viewport, con
                 ImVec2 triangle[3];
                 for (int n = 0; n < 3; n++, idx_i++)
                 {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
                     const ImDrawVert& v = vtx_buffer[idx_buffer ? idx_buffer[idx_i] : idx_i];
                     triangle[n] = v.pos;
                     buf_p += ImFormatString(buf_p, buf_end - buf_p, "%s %04d: pos (%8.2f,%8.2f), uv (%.6f,%.6f), col %08X\n",
                         (n == 0) ? "Vert:" : "     ", idx_i, v.pos.x, v.pos.y, v.uv.x, v.uv.y, v.col);
+#else
+                    const ImDrawVertPos& pos = vtx_positions[idx_buffer ? idx_buffer[idx_i] : idx_i];
+                    const ImDrawVertUv& uv = vtx_uvs[idx_buffer ? idx_buffer[idx_i] : idx_i];
+                    const ImDrawVertCol& col = vtx_colors[idx_buffer ? idx_buffer[idx_i] : idx_i];
+                    triangle[n] = pos;
+                    buf_p += ImFormatString(buf_p, buf_end - buf_p, "%s %04d: pos (%8.2f,%8.2f), uv (%.6f,%.6f), col %08X\n",
+                        (n == 0) ? "Vert:" : "     ", idx_i, pos.x, pos.y, uv.x, uv.y, col);
+#endif
                 }
 
                 Selectable(buf, false);
@@ -20798,11 +20848,19 @@ void ImGui::DebugNodeDrawCmdShowMeshAndBoundingBox(ImDrawList* out_draw_list, co
     for (unsigned int idx_n = draw_cmd->IdxOffset, idx_end = draw_cmd->IdxOffset + draw_cmd->ElemCount; idx_n < idx_end; )
     {
         ImDrawIdx* idx_buffer = (draw_list->IdxBuffer.Size > 0) ? draw_list->IdxBuffer.Data : NULL; // We don't hold on those pointers past iterations as ->AddPolyline() may invalidate them if out_draw_list==draw_list
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
         ImDrawVert* vtx_buffer = draw_list->VtxBuffer.Data + draw_cmd->VtxOffset;
-
+#else
+        ImDrawVertPos* vtx_positions = draw_list->VtxPosBuffer.Data + draw_cmd->VtxOffset;
+#endif
         ImVec2 triangle[3];
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
         for (int n = 0; n < 3; n++, idx_n++)
             vtxs_rect.Add((triangle[n] = vtx_buffer[idx_buffer ? idx_buffer[idx_n] : idx_n].pos));
+#else
+        for (int n = 0; n < 3; n++, idx_n++)
+            vtxs_rect.Add((triangle[n] = vtx_positions[idx_buffer ? idx_buffer[idx_n] : idx_n]));
+#endif
         if (show_mesh)
             out_draw_list->AddPolyline(triangle, 3, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 1.0f); // In yellow: mesh triangles
     }

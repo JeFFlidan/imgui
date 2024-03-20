@@ -401,11 +401,20 @@ void ImDrawList::_ResetForNewFrame()
 
     CmdBuffer.resize(0);
     IdxBuffer.resize(0);
-    VtxBuffer.resize(0);
     Flags = _Data->InitialFlags;
     memset(&_CmdHeader, 0, sizeof(_CmdHeader));
     _VtxCurrentIdx = 0;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
+    VtxBuffer.resize(0);
     _VtxWritePtr = NULL;
+#else
+    VtxPosBuffer.resize(0);
+    VtxUvBuffer.resize(0);
+    VtxColBuffer.resize(0);
+    _VtxPosWritePtr = NULL;
+    _VtxUvWritePtr = NULL;
+    _VtxColWritePtr = NULL;
+#endif
     _IdxWritePtr = NULL;
     _ClipRectStack.resize(0);
     _TextureIdStack.resize(0);
@@ -419,10 +428,19 @@ void ImDrawList::_ClearFreeMemory()
 {
     CmdBuffer.clear();
     IdxBuffer.clear();
-    VtxBuffer.clear();
     Flags = ImDrawListFlags_None;
     _VtxCurrentIdx = 0;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
+    VtxBuffer.clear();
     _VtxWritePtr = NULL;
+#else
+    VtxPosBuffer.resize(0);
+    VtxUvBuffer.resize(0);
+    VtxColBuffer.resize(0);
+    _VtxPosWritePtr = NULL;
+    _VtxUvWritePtr = NULL;
+    _VtxColWritePtr = NULL;
+#endif
     _IdxWritePtr = NULL;
     _ClipRectStack.clear();
     _TextureIdStack.clear();
@@ -435,7 +453,13 @@ ImDrawList* ImDrawList::CloneOutput() const
     ImDrawList* dst = IM_NEW(ImDrawList(_Data));
     dst->CmdBuffer = CmdBuffer;
     dst->IdxBuffer = IdxBuffer;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     dst->VtxBuffer = VtxBuffer;
+#else
+    dst->VtxPosBuffer = VtxPosBuffer;
+    dst->VtxUvBuffer = VtxUvBuffer;
+    dst->VtxColBuffer = VtxColBuffer;
+#endif
     dst->Flags = Flags;
     return dst;
 }
@@ -632,16 +656,29 @@ void ImDrawList::PrimReserve(int idx_count, int vtx_count)
         // FIXME: In theory we should be testing that vtx_count <64k here.
         // In practice, RenderText() relies on reserving ahead for a worst case scenario so it is currently useful for us
         // to not make that check until we rework the text functions to handle clipping and large horizontal lines better.
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
         _CmdHeader.VtxOffset = VtxBuffer.Size;
+#else
+        _CmdHeader.VtxOffset = VtxPosBuffer.Size;
+#endif
         _OnChangedVtxOffset();
     }
 
     ImDrawCmd* draw_cmd = &CmdBuffer.Data[CmdBuffer.Size - 1];
     draw_cmd->ElemCount += idx_count;
-
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     int vtx_buffer_old_size = VtxBuffer.Size;
     VtxBuffer.resize(vtx_buffer_old_size + vtx_count);
     _VtxWritePtr = VtxBuffer.Data + vtx_buffer_old_size;
+#else
+    int vtx_buffer_old_size = VtxPosBuffer.Size;
+    VtxPosBuffer.resize(vtx_buffer_old_size + vtx_count);
+    VtxUvBuffer.resize(vtx_buffer_old_size + vtx_count);
+    VtxColBuffer.resize(vtx_buffer_old_size + vtx_count);
+    _VtxPosWritePtr = VtxPosBuffer.Data + vtx_buffer_old_size;
+    _VtxUvWritePtr = VtxUvBuffer.Data + vtx_buffer_old_size;
+    _VtxColWritePtr = VtxColBuffer.Data + vtx_buffer_old_size;
+#endif
 
     int idx_buffer_old_size = IdxBuffer.Size;
     IdxBuffer.resize(idx_buffer_old_size + idx_count);
@@ -655,7 +692,13 @@ void ImDrawList::PrimUnreserve(int idx_count, int vtx_count)
 
     ImDrawCmd* draw_cmd = &CmdBuffer.Data[CmdBuffer.Size - 1];
     draw_cmd->ElemCount -= idx_count;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     VtxBuffer.shrink(VtxBuffer.Size - vtx_count);
+#else
+    VtxPosBuffer.shrink(VtxPosBuffer.Size - vtx_count);
+    VtxUvBuffer.shrink(VtxUvBuffer.Size - vtx_count);
+    VtxColBuffer.shrink(VtxColBuffer.Size - vtx_count);
+#endif
     IdxBuffer.shrink(IdxBuffer.Size - idx_count);
 }
 
@@ -666,11 +709,21 @@ void ImDrawList::PrimRect(const ImVec2& a, const ImVec2& c, ImU32 col)
     ImDrawIdx idx = (ImDrawIdx)_VtxCurrentIdx;
     _IdxWritePtr[0] = idx; _IdxWritePtr[1] = (ImDrawIdx)(idx+1); _IdxWritePtr[2] = (ImDrawIdx)(idx+2);
     _IdxWritePtr[3] = idx; _IdxWritePtr[4] = (ImDrawIdx)(idx+2); _IdxWritePtr[5] = (ImDrawIdx)(idx+3);
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;
     _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col;
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv; _VtxWritePtr[3].col = col;
     _VtxWritePtr += 4;
+#else
+    _VtxPosWritePtr[0] = a; _VtxUvWritePtr[0] = uv; _VtxColWritePtr[0] = col;
+    _VtxPosWritePtr[1] = b; _VtxUvWritePtr[1] = uv; _VtxColWritePtr[1] = col;
+    _VtxPosWritePtr[2] = c; _VtxUvWritePtr[2] = uv; _VtxColWritePtr[2] = col;
+    _VtxPosWritePtr[3] = d; _VtxUvWritePtr[3] = uv; _VtxColWritePtr[3] = col;
+    _VtxPosWritePtr += 4;
+    _VtxUvWritePtr += 4;
+    _VtxColWritePtr += 4;
+#endif
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
 }
@@ -681,11 +734,21 @@ void ImDrawList::PrimRectUV(const ImVec2& a, const ImVec2& c, const ImVec2& uv_a
     ImDrawIdx idx = (ImDrawIdx)_VtxCurrentIdx;
     _IdxWritePtr[0] = idx; _IdxWritePtr[1] = (ImDrawIdx)(idx+1); _IdxWritePtr[2] = (ImDrawIdx)(idx+2);
     _IdxWritePtr[3] = idx; _IdxWritePtr[4] = (ImDrawIdx)(idx+2); _IdxWritePtr[5] = (ImDrawIdx)(idx+3);
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv_a; _VtxWritePtr[0].col = col;
     _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col;
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
     _VtxWritePtr += 4;
+#else
+    _VtxPosWritePtr[0] = a; _VtxUvWritePtr[0] = uv_a; _VtxColWritePtr[0] = col;
+    _VtxPosWritePtr[1] = b; _VtxUvWritePtr[1] = uv_b; _VtxColWritePtr[1] = col;
+    _VtxPosWritePtr[2] = c; _VtxUvWritePtr[2] = uv_c; _VtxColWritePtr[2] = col;
+    _VtxPosWritePtr[3] = d; _VtxUvWritePtr[3] = uv_d; _VtxColWritePtr[3] = col;
+    _VtxPosWritePtr += 4;
+    _VtxUvWritePtr += 4;
+    _VtxColWritePtr += 4;
+#endif
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
 }
@@ -695,11 +758,21 @@ void ImDrawList::PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, c
     ImDrawIdx idx = (ImDrawIdx)_VtxCurrentIdx;
     _IdxWritePtr[0] = idx; _IdxWritePtr[1] = (ImDrawIdx)(idx+1); _IdxWritePtr[2] = (ImDrawIdx)(idx+2);
     _IdxWritePtr[3] = idx; _IdxWritePtr[4] = (ImDrawIdx)(idx+2); _IdxWritePtr[5] = (ImDrawIdx)(idx+3);
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv_a; _VtxWritePtr[0].col = col;
     _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col;
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
     _VtxWritePtr += 4;
+#else
+    _VtxPosWritePtr[0] = a; _VtxUvWritePtr[0] = uv_a; _VtxColWritePtr[0] = col;
+    _VtxPosWritePtr[1] = b; _VtxUvWritePtr[1] = uv_b; _VtxColWritePtr[1] = col;
+    _VtxPosWritePtr[2] = c; _VtxUvWritePtr[2] = uv_c; _VtxColWritePtr[2] = col;
+    _VtxPosWritePtr[3] = d; _VtxUvWritePtr[3] = uv_d; _VtxColWritePtr[3] = col;
+    _VtxPosWritePtr += 4;
+    _VtxUvWritePtr += 4;
+    _VtxColWritePtr += 4;
+#endif
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
 }
@@ -847,9 +920,17 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
                 ImVec2 tex_uv1(tex_uvs.z, tex_uvs.w);
                 for (int i = 0; i < points_count; i++)
                 {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
                     _VtxWritePtr[0].pos = temp_points[i * 2 + 0]; _VtxWritePtr[0].uv = tex_uv0; _VtxWritePtr[0].col = col; // Left-side outer edge
                     _VtxWritePtr[1].pos = temp_points[i * 2 + 1]; _VtxWritePtr[1].uv = tex_uv1; _VtxWritePtr[1].col = col; // Right-side outer edge
                     _VtxWritePtr += 2;
+#else
+                    _VtxPosWritePtr[0] = temp_points[i * 2 + 0]; _VtxUvWritePtr[0] = tex_uv0; _VtxColWritePtr[0] = col;  // Left-side outer edge
+                    _VtxPosWritePtr[1] = temp_points[i * 2 + 1]; _VtxUvWritePtr[1] = tex_uv1; _VtxColWritePtr[1] = col;  // Right-side outer edge
+                    _VtxPosWritePtr += 2;
+                    _VtxUvWritePtr += 2;
+                    _VtxColWritePtr += 2;
+#endif
                 }
             }
             else
@@ -857,10 +938,19 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
                 // If we're not using a texture, we need the center vertex as well
                 for (int i = 0; i < points_count; i++)
                 {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
                     _VtxWritePtr[0].pos = points[i];              _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col;       // Center of line
                     _VtxWritePtr[1].pos = temp_points[i * 2 + 0]; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col_trans; // Left-side outer edge
                     _VtxWritePtr[2].pos = temp_points[i * 2 + 1]; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col_trans; // Right-side outer edge
                     _VtxWritePtr += 3;
+#else
+                    _VtxPosWritePtr[0] = points[i];              _VtxUvWritePtr[0] = opaque_uv; _VtxColWritePtr[0] = col;       // Center of line
+                    _VtxPosWritePtr[1] = temp_points[i * 2 + 0]; _VtxUvWritePtr[1] = opaque_uv; _VtxColWritePtr[1] = col_trans; // Left-side outer edge
+                    _VtxPosWritePtr[2] = temp_points[i * 2 + 1]; _VtxUvWritePtr[2] = opaque_uv; _VtxColWritePtr[2] = col_trans; // Right-side outer edge
+                    _VtxPosWritePtr += 3;
+                    _VtxUvWritePtr += 3;
+                    _VtxColWritePtr += 3;
+#endif
                 }
             }
         }
@@ -927,11 +1017,21 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
             // Add vertices
             for (int i = 0; i < points_count; i++)
             {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
                 _VtxWritePtr[0].pos = temp_points[i * 4 + 0]; _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col_trans;
                 _VtxWritePtr[1].pos = temp_points[i * 4 + 1]; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col;
                 _VtxWritePtr[2].pos = temp_points[i * 4 + 2]; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col;
                 _VtxWritePtr[3].pos = temp_points[i * 4 + 3]; _VtxWritePtr[3].uv = opaque_uv; _VtxWritePtr[3].col = col_trans;
                 _VtxWritePtr += 4;
+#else
+                _VtxPosWritePtr[0] = temp_points[i * 4 + 0]; _VtxUvWritePtr[0] = opaque_uv; _VtxColWritePtr[0] = col_trans;
+                _VtxPosWritePtr[1] = temp_points[i * 4 + 1]; _VtxUvWritePtr[1] = opaque_uv; _VtxColWritePtr[1] = col;
+                _VtxPosWritePtr[2] = temp_points[i * 4 + 2]; _VtxUvWritePtr[2] = opaque_uv; _VtxColWritePtr[2] = col;
+                _VtxPosWritePtr[3] = temp_points[i * 4 + 3]; _VtxUvWritePtr[3] = opaque_uv; _VtxColWritePtr[3] = col_trans;
+                _VtxPosWritePtr += 4;
+                _VtxUvWritePtr += 4;
+                _VtxColWritePtr += 4;
+#endif
             }
         }
         _VtxCurrentIdx += (ImDrawIdx)vtx_count;
@@ -954,13 +1054,21 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
             IM_NORMALIZE2F_OVER_ZERO(dx, dy);
             dx *= (thickness * 0.5f);
             dy *= (thickness * 0.5f);
-
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             _VtxWritePtr[0].pos.x = p1.x + dy; _VtxWritePtr[0].pos.y = p1.y - dx; _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col;
             _VtxWritePtr[1].pos.x = p2.x + dy; _VtxWritePtr[1].pos.y = p2.y - dx; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col;
             _VtxWritePtr[2].pos.x = p2.x - dy; _VtxWritePtr[2].pos.y = p2.y + dx; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col;
             _VtxWritePtr[3].pos.x = p1.x - dy; _VtxWritePtr[3].pos.y = p1.y + dx; _VtxWritePtr[3].uv = opaque_uv; _VtxWritePtr[3].col = col;
             _VtxWritePtr += 4;
-
+#else
+            _VtxPosWritePtr[0].x = p1.x + dy; _VtxPosWritePtr[0].y = p1.y - dx; _VtxUvWritePtr[0] = opaque_uv; _VtxColWritePtr[0] = col;
+            _VtxPosWritePtr[1].x = p2.x + dy; _VtxPosWritePtr[1].y = p2.y - dx; _VtxUvWritePtr[1] = opaque_uv; _VtxColWritePtr[1] = col;
+            _VtxPosWritePtr[2].x = p2.x - dy; _VtxPosWritePtr[2].y = p2.y + dx; _VtxUvWritePtr[2] = opaque_uv; _VtxColWritePtr[2] = col;
+            _VtxPosWritePtr[3].x = p1.x - dy; _VtxPosWritePtr[3].y = p1.y + dx; _VtxUvWritePtr[3] = opaque_uv; _VtxColWritePtr[3] = col;
+            _VtxPosWritePtr += 4;
+            _VtxUvWritePtr += 4;
+            _VtxColWritePtr += 4;
+#endif
             _IdxWritePtr[0] = (ImDrawIdx)(_VtxCurrentIdx); _IdxWritePtr[1] = (ImDrawIdx)(_VtxCurrentIdx + 1); _IdxWritePtr[2] = (ImDrawIdx)(_VtxCurrentIdx + 2);
             _IdxWritePtr[3] = (ImDrawIdx)(_VtxCurrentIdx); _IdxWritePtr[4] = (ImDrawIdx)(_VtxCurrentIdx + 2); _IdxWritePtr[5] = (ImDrawIdx)(_VtxCurrentIdx + 3);
             _IdxWritePtr += 6;
@@ -1022,9 +1130,17 @@ void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_coun
             dm_y *= AA_SIZE * 0.5f;
 
             // Add vertices
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             _VtxWritePtr[0].pos.x = (points[i1].x - dm_x); _VtxWritePtr[0].pos.y = (points[i1].y - dm_y); _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;        // Inner
             _VtxWritePtr[1].pos.x = (points[i1].x + dm_x); _VtxWritePtr[1].pos.y = (points[i1].y + dm_y); _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col_trans;  // Outer
             _VtxWritePtr += 2;
+#else
+            _VtxPosWritePtr[0].x = (points[i1].x - dm_x); _VtxPosWritePtr[0].y = (points[i1].y - dm_y); _VtxUvWritePtr[0] = uv; _VtxColWritePtr[0] = col;        // Inner
+            _VtxPosWritePtr[1].x = (points[i1].x + dm_x); _VtxPosWritePtr[1].y = (points[i1].y + dm_y); _VtxUvWritePtr[1] = uv; _VtxColWritePtr[1] = col_trans;  // Outer
+            _VtxPosWritePtr += 2;
+            _VtxColWritePtr += 2;
+            _VtxUvWritePtr += 2;
+#endif
 
             // Add indexes for fringes
             _IdxWritePtr[0] = (ImDrawIdx)(vtx_inner_idx + (i1 << 1)); _IdxWritePtr[1] = (ImDrawIdx)(vtx_inner_idx + (i0 << 1)); _IdxWritePtr[2] = (ImDrawIdx)(vtx_outer_idx + (i0 << 1));
@@ -1041,8 +1157,15 @@ void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_coun
         PrimReserve(idx_count, vtx_count);
         for (int i = 0; i < vtx_count; i++)
         {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             _VtxWritePtr[0].pos = points[i]; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;
             _VtxWritePtr++;
+#else
+            _VtxPosWritePtr[0] = points[i]; _VtxUvWritePtr[0] = uv; _VtxColWritePtr[0] = col;
+            ++_VtxPosWritePtr;
+            ++_VtxUvWritePtr;
+            ++_VtxColWritePtr;
+#endif
         }
         for (int i = 2; i < points_count; i++)
         {
@@ -1695,11 +1818,19 @@ void ImDrawList::AddImageRounded(ImTextureID user_texture_id, const ImVec2& p_mi
     const bool push_texture_id = user_texture_id != _CmdHeader.TextureId;
     if (push_texture_id)
         PushTextureID(user_texture_id);
-
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     int vert_start_idx = VtxBuffer.Size;
+#else
+    int vert_start_idx = VtxPosBuffer.Size;
+#endif
     PathRect(p_min, p_max, rounding, flags);
     PathFillConvex(col);
+
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     int vert_end_idx = VtxBuffer.Size;
+#else
+    int vert_end_idx = VtxPosBuffer.Size;
+#endif
     ImGui::ShadeVertsLinearUV(this, vert_start_idx, vert_end_idx, p_min, p_max, uv_min, uv_max, true);
 
     if (push_texture_id)
@@ -1983,10 +2114,17 @@ void ImDrawList::AddConcavePolyFilled(const ImVec2* points, const int points_cou
             dm_y *= AA_SIZE * 0.5f;
 
             // Add vertices
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             _VtxWritePtr[0].pos.x = (points[i1].x - dm_x); _VtxWritePtr[0].pos.y = (points[i1].y - dm_y); _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;        // Inner
             _VtxWritePtr[1].pos.x = (points[i1].x + dm_x); _VtxWritePtr[1].pos.y = (points[i1].y + dm_y); _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col_trans;  // Outer
             _VtxWritePtr += 2;
-
+#else
+            _VtxPosWritePtr[0].x = (points[i1].x - dm_x); _VtxPosWritePtr[0].y = (points[i1].y - dm_y); _VtxUvWritePtr[0] = uv; _VtxColWritePtr[0] = col;        // Inner
+            _VtxPosWritePtr[1].x = (points[i1].x + dm_x); _VtxPosWritePtr[1].y = (points[i1].y + dm_y); _VtxUvWritePtr[1] = uv; _VtxColWritePtr[1] = col_trans;  // Outer
+            _VtxPosWritePtr += 2;
+            _VtxUvWritePtr += 2;
+            _VtxColWritePtr += 2;
+#endif
             // Add indexes for fringes
             _IdxWritePtr[0] = (ImDrawIdx)(vtx_inner_idx + (i1 << 1)); _IdxWritePtr[1] = (ImDrawIdx)(vtx_inner_idx + (i0 << 1)); _IdxWritePtr[2] = (ImDrawIdx)(vtx_outer_idx + (i0 << 1));
             _IdxWritePtr[3] = (ImDrawIdx)(vtx_outer_idx + (i0 << 1)); _IdxWritePtr[4] = (ImDrawIdx)(vtx_outer_idx + (i1 << 1)); _IdxWritePtr[5] = (ImDrawIdx)(vtx_inner_idx + (i1 << 1));
@@ -2002,8 +2140,15 @@ void ImDrawList::AddConcavePolyFilled(const ImVec2* points, const int points_cou
         PrimReserve(idx_count, vtx_count);
         for (int i = 0; i < vtx_count; i++)
         {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
             _VtxWritePtr[0].pos = points[i]; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;
             _VtxWritePtr++;
+#else
+            _VtxPosWritePtr[0] = points[i]; _VtxUvWritePtr[0] = uv; _VtxColWritePtr[0] = col;
+            ++_VtxPosWritePtr;
+            ++_VtxUvWritePtr;
+            ++_VtxColWritePtr;
+#endif
         }
         _Data->TempBuffer.reserve_discard((ImTriangulator::EstimateScratchBufferSize(points_count) + sizeof(ImVec2)) / sizeof(ImVec2));
         triangulator.Init(points, points_count, _Data->TempBuffer.Data);
@@ -2185,11 +2330,17 @@ void ImGui::AddDrawListToDrawDataEx(ImDrawData* draw_data, ImVector<ImDrawList*>
         return;
 
     // Draw list sanity check. Detect mismatch between PrimReserve() calls and incrementing _VtxCurrentIdx, _VtxWritePtr etc.
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     // May trigger for you if you are using PrimXXX functions incorrectly.
     IM_ASSERT(draw_list->VtxBuffer.Size == 0 || draw_list->_VtxWritePtr == draw_list->VtxBuffer.Data + draw_list->VtxBuffer.Size);
-    IM_ASSERT(draw_list->IdxBuffer.Size == 0 || draw_list->_IdxWritePtr == draw_list->IdxBuffer.Data + draw_list->IdxBuffer.Size);
     if (!(draw_list->Flags & ImDrawListFlags_AllowVtxOffset))
         IM_ASSERT((int)draw_list->_VtxCurrentIdx == draw_list->VtxBuffer.Size);
+#else
+    IM_ASSERT(draw_list->VtxPosBuffer.Size == 0 || draw_list->_VtxPosWritePtr == draw_list->VtxPosBuffer.Data + draw_list->VtxPosBuffer.Size);
+    if (!(draw_list->Flags & ImDrawListFlags_AllowVtxOffset))
+        IM_ASSERT((int)draw_list->_VtxCurrentIdx == draw_list->VtxPosBuffer.Size);
+#endif
+    IM_ASSERT(draw_list->IdxBuffer.Size == 0 || draw_list->_IdxWritePtr == draw_list->IdxBuffer.Data + draw_list->IdxBuffer.Size);
 
     // Check that draw_list doesn't use more vertices than indexable (default ImDrawIdx = unsigned short = 2 bytes = 64K vertices per ImDrawList = per window)
     // If this assert triggers because you are drawing lots of stuff manually:
@@ -2212,7 +2363,11 @@ void ImGui::AddDrawListToDrawDataEx(ImDrawData* draw_data, ImVector<ImDrawList*>
     // Add to output list + records state in ImDrawData
     out_list->push_back(draw_list);
     draw_data->CmdListsCount++;
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     draw_data->TotalVtxCount += draw_list->VtxBuffer.Size;
+#else
+    draw_data->TotalVtxCount += draw_list->VtxPosBuffer.Size;
+#endif
     draw_data->TotalIdxCount += draw_list->IdxBuffer.Size;
 }
 
@@ -2226,6 +2381,7 @@ void ImDrawData::AddDrawList(ImDrawList* draw_list)
 // For backward compatibility: convert all buffers from indexed to de-indexed, in case you cannot render indexed. Note: this is slow and most likely a waste of resources. Always prefer indexed rendering!
 void ImDrawData::DeIndexAllBuffers()
 {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     ImVector<ImDrawVert> new_vtx_buffer;
     TotalVtxCount = TotalIdxCount = 0;
     for (int i = 0; i < CmdListsCount; i++)
@@ -2240,6 +2396,32 @@ void ImDrawData::DeIndexAllBuffers()
         cmd_list->IdxBuffer.resize(0);
         TotalVtxCount += cmd_list->VtxBuffer.Size;
     }
+#else
+    ImVector<ImDrawVertPos> new_vtx_pos_buffer;
+    ImVector<ImDrawVertUv> new_vtx_uv_buffer;
+    ImVector<ImDrawVertCol> new_vtx_col_buffer;
+    TotalVtxCount = TotalIdxCount = 0;
+    for (int i = 0; i < CmdListsCount; i++)
+    {
+        ImDrawList* cmd_list = CmdLists[i];
+        if (cmd_list->IdxBuffer.empty())
+            continue;
+        new_vtx_pos_buffer.resize(cmd_list->IdxBuffer.Size);
+        new_vtx_uv_buffer.resize(cmd_list->IdxBuffer.Size);
+        new_vtx_col_buffer.resize(cmd_list->IdxBuffer.Size);
+        for (int j = 0; j < cmd_list->IdxBuffer.Size; j++)
+        {
+            new_vtx_pos_buffer[j] = cmd_list->VtxPosBuffer[cmd_list->IdxBuffer[j]];
+            new_vtx_uv_buffer[j] = cmd_list->VtxUvBuffer[cmd_list->IdxBuffer[j]];
+            new_vtx_col_buffer[j] = cmd_list->VtxColBuffer[cmd_list->IdxBuffer[j]];
+        }
+        cmd_list->VtxPosBuffer.swap(new_vtx_pos_buffer);
+        cmd_list->VtxUvBuffer.swap(new_vtx_uv_buffer);
+        cmd_list->VtxColBuffer.swap(new_vtx_col_buffer);
+        cmd_list->IdxBuffer.resize(0);
+        TotalVtxCount += cmd_list->VtxPosBuffer.Size;
+    }
+#endif
 }
 
 // Helper to scale the ClipRect field of each ImDrawCmd.
@@ -2261,14 +2443,16 @@ void ImGui::ShadeVertsLinearColorGradientKeepAlpha(ImDrawList* draw_list, int ve
 {
     ImVec2 gradient_extent = gradient_p1 - gradient_p0;
     float gradient_inv_length2 = 1.0f / ImLengthSqr(gradient_extent);
-    ImDrawVert* vert_start = draw_list->VtxBuffer.Data + vert_start_idx;
-    ImDrawVert* vert_end = draw_list->VtxBuffer.Data + vert_end_idx;
     const int col0_r = (int)(col0 >> IM_COL32_R_SHIFT) & 0xFF;
     const int col0_g = (int)(col0 >> IM_COL32_G_SHIFT) & 0xFF;
     const int col0_b = (int)(col0 >> IM_COL32_B_SHIFT) & 0xFF;
     const int col_delta_r = ((int)(col1 >> IM_COL32_R_SHIFT) & 0xFF) - col0_r;
     const int col_delta_g = ((int)(col1 >> IM_COL32_G_SHIFT) & 0xFF) - col0_g;
     const int col_delta_b = ((int)(col1 >> IM_COL32_B_SHIFT) & 0xFF) - col0_b;
+
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
+    ImDrawVert* vert_start = draw_list->VtxBuffer.Data + vert_start_idx;
+    ImDrawVert* vert_end = draw_list->VtxBuffer.Data + vert_end_idx;
     for (ImDrawVert* vert = vert_start; vert < vert_end; vert++)
     {
         float d = ImDot(vert->pos - gradient_p0, gradient_extent);
@@ -2278,6 +2462,20 @@ void ImGui::ShadeVertsLinearColorGradientKeepAlpha(ImDrawList* draw_list, int ve
         int b = (int)(col0_b + col_delta_b * t);
         vert->col = (r << IM_COL32_R_SHIFT) | (g << IM_COL32_G_SHIFT) | (b << IM_COL32_B_SHIFT) | (vert->col & IM_COL32_A_MASK);
     }
+#else
+    ImDrawVertPos* vert_positions = draw_list->VtxPosBuffer.Data + vert_start_idx;
+    ImDrawVertCol* vert_colors = draw_list->VtxColBuffer.Data + vert_start_idx;
+    size_t end = (size_t)(vert_end_idx - vert_start_idx);
+    for (size_t i = 0; i < end; ++i)
+    {
+        float d = ImDot(vert_positions[i] - gradient_p0, gradient_extent);
+        float t = ImClamp(d * gradient_inv_length2, 0.0f, 1.0f);
+        int r = (int)(col0_r + col_delta_r * t);
+        int g = (int)(col0_g + col_delta_g * t);
+        int b = (int)(col0_b + col_delta_b * t);
+        vert_colors[i] = (r << IM_COL32_R_SHIFT) | (g << IM_COL32_G_SHIFT) | (b << IM_COL32_B_SHIFT) | (vert_colors[i] & IM_COL32_A_MASK);
+    }
+#endif
 }
 
 // Distribute UV over (a, b) rectangle
@@ -2289,6 +2487,7 @@ void ImGui::ShadeVertsLinearUV(ImDrawList* draw_list, int vert_start_idx, int ve
         size.x != 0.0f ? (uv_size.x / size.x) : 0.0f,
         size.y != 0.0f ? (uv_size.y / size.y) : 0.0f);
 
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     ImDrawVert* vert_start = draw_list->VtxBuffer.Data + vert_start_idx;
     ImDrawVert* vert_end = draw_list->VtxBuffer.Data + vert_end_idx;
     if (clamp)
@@ -2303,14 +2502,38 @@ void ImGui::ShadeVertsLinearUV(ImDrawList* draw_list, int vert_start_idx, int ve
         for (ImDrawVert* vertex = vert_start; vertex < vert_end; ++vertex)
             vertex->uv = uv_a + ImMul(ImVec2(vertex->pos.x, vertex->pos.y) - a, scale);
     }
+#else
+    ImDrawVertPos* vert_positions = draw_list->VtxPosBuffer.Data + vert_start_idx;
+    ImDrawVertUv* vert_uvs = draw_list->VtxUvBuffer.Data + vert_start_idx;
+    size_t end = (size_t)(vert_end_idx - vert_start_idx);
+    if (clamp)
+    {
+        const ImVec2 min = ImMin(uv_a, uv_b);
+        const ImVec2 max = ImMax(uv_a, uv_b);
+        for (size_t i = 0; i != end; ++i)
+            vert_uvs[i] = ImClamp(uv_a + ImMul(ImVec2(vert_positions[i].x, vert_positions[i].y) - a, scale), min, max);
+    }
+    else
+    {
+        for (size_t i = 0; i != end; ++i)
+            vert_uvs[i] = uv_a + ImMul(ImVec2(vert_positions[i].x, vert_positions[i].y) - a, scale);
+    }
+#endif
 }
 
 void ImGui::ShadeVertsTransformPos(ImDrawList* draw_list, int vert_start_idx, int vert_end_idx, const ImVec2& pivot_in, float cos_a, float sin_a, const ImVec2& pivot_out)
 {
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     ImDrawVert* vert_start = draw_list->VtxBuffer.Data + vert_start_idx;
     ImDrawVert* vert_end = draw_list->VtxBuffer.Data + vert_end_idx;
     for (ImDrawVert* vertex = vert_start; vertex < vert_end; ++vertex)
         vertex->pos = ImRotate(vertex->pos- pivot_in, cos_a, sin_a) + pivot_out;
+#else
+    ImDrawVertPos* vert_start = draw_list->VtxPosBuffer.Data + vert_start_idx;
+    ImDrawVertPos* vert_end = draw_list->VtxPosBuffer.Data + vert_end_idx;
+    for (ImDrawVertPos* vertex = vert_start; vertex < vert_end; ++vertex)
+        *vertex = ImRotate(*vertex - pivot_in, cos_a, sin_a) + pivot_out;
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -4065,7 +4288,13 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, Im
     const int idx_count_max = (int)(text_end - s) * 6;
     const int idx_expected_size = draw_list->IdxBuffer.Size + idx_count_max;
     draw_list->PrimReserve(idx_count_max, vtx_count_max);
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     ImDrawVert*  vtx_write = draw_list->_VtxWritePtr;
+#else
+    ImDrawVertPos* vtx_pos_write = draw_list->_VtxPosWritePtr;
+    ImDrawVertUv* vtx_uv_write = draw_list->_VtxUvWritePtr;
+    ImDrawVertCol* vtx_col_write = draw_list->_VtxColWritePtr;
+#endif
     ImDrawIdx*   idx_write = draw_list->_IdxWritePtr;
     unsigned int vtx_index = draw_list->_VtxCurrentIdx;
 
@@ -4164,6 +4393,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, Im
                 // Support for untinted glyphs
                 ImU32 glyph_col = glyph->Colored ? col_untinted : col;
 
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
                 // We are NOT calling PrimRectUV() here because non-inlined causes too much overhead in a debug builds. Inlined here:
                 {
                     vtx_write[0].pos.x = x1; vtx_write[0].pos.y = y1; vtx_write[0].col = glyph_col; vtx_write[0].uv.x = u1; vtx_write[0].uv.y = v1;
@@ -4176,16 +4406,35 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, Im
                     vtx_index += 4;
                     idx_write += 6;
                 }
+#else
+                {
+                    vtx_pos_write[0].x = x1; vtx_pos_write[0].y = y1; vtx_col_write[0] = glyph_col; vtx_uv_write[0].x = u1; vtx_uv_write[0].y = v1;
+                    vtx_pos_write[1].x = x2; vtx_pos_write[1].y = y1; vtx_col_write[1] = glyph_col; vtx_uv_write[1].x = u2; vtx_uv_write[1].y = v1;
+                    vtx_pos_write[2].x = x2; vtx_pos_write[2].y = y2; vtx_col_write[2] = glyph_col; vtx_uv_write[2].x = u2; vtx_uv_write[2].y = v2;
+                    vtx_pos_write[3].x = x1; vtx_pos_write[3].y = y2; vtx_col_write[3] = glyph_col; vtx_uv_write[3].x = u1; vtx_uv_write[3].y = v2;
+                    idx_write[0] = (ImDrawIdx)(vtx_index); idx_write[1] = (ImDrawIdx)(vtx_index + 1); idx_write[2] = (ImDrawIdx)(vtx_index + 2);
+                    idx_write[3] = (ImDrawIdx)(vtx_index); idx_write[4] = (ImDrawIdx)(vtx_index + 2); idx_write[5] = (ImDrawIdx)(vtx_index + 3);
+                }
+#endif
             }
         }
         x += char_width;
     }
 
     // Give back unused vertices (clipped ones, blanks) ~ this is essentially a PrimUnreserve() action.
+#if defined(IMGUI_USE_VERTEX_INPUT_LAYOUTS)
     draw_list->VtxBuffer.Size = (int)(vtx_write - draw_list->VtxBuffer.Data); // Same as calling shrink()
+    draw_list->_VtxWritePtr = vtx_write;
+#else
+    draw_list->VtxPosBuffer.Size = (int)(vtx_pos_write - draw_list->VtxPosBuffer.Data);
+    draw_list->VtxPosBuffer.Data = vtx_pos_write;
+    draw_list->VtxUvBuffer.Size = (int)(vtx_uv_write - draw_list->VtxUvBuffer.Data);
+    draw_list->VtxUvBuffer.Data = vtx_uv_write;
+    draw_list->VtxColBuffer.Size = (int)(vtx_col_write - draw_list->VtxColBuffer.Data);
+    draw_list->VtxColBuffer.Data = vtx_col_write;
+#endif
     draw_list->IdxBuffer.Size = (int)(idx_write - draw_list->IdxBuffer.Data);
     draw_list->CmdBuffer[draw_list->CmdBuffer.Size - 1].ElemCount -= (idx_expected_size - draw_list->IdxBuffer.Size);
-    draw_list->_VtxWritePtr = vtx_write;
     draw_list->_IdxWritePtr = idx_write;
     draw_list->_VtxCurrentIdx = vtx_index;
 }
